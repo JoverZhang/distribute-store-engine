@@ -1,0 +1,29 @@
+{
+  "name": "distribute-store-engine",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "start:get_client": "tsc src/get_client.ts --outDir dist/get_client && node dist/get_client/get_client.js",
+    "start:update_client": "tsc src/update_client.ts --outDir dist/update_client && node dist/update_client/update_client.js",
+    "start:server": "tsc src/server.ts --outDir dist/server && node dist/server/server.js"
+  },
+  "keywords": [],
+  "author": "Jover Zhang",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/koa": "^2.13.12",
+    "@types/koa-bodyparser": "^4.3.12",
+    "@types/koa__router": "^12.0.4",
+    "@types/uuid": "^9.0.7",
+    "@types/ws": "^8.5.10",
+    "typescript": "^5.3.2"
+  },
+  "dependencies": {
+    "@koa/router": "^12.0.1",
+    "axios": "^1.6.2",
+    "koa": "^2.14.2",
+    "koa-bodyparser": "^4.4.1",
+    "uuid": "^9.0.1",
+    "ws": "^8.14.2"
+  }
+}
