@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid'
-import { DataSheet } from './index'
+import { Datasheet } from './index'
 
 
 export interface ICommand {
@@ -63,7 +63,7 @@ export class UpdateCellValueCommand extends Command {
   }
 }
 
-export const applyChangeLog = (datasheet: DataSheet, changeLog: ChangeLog) => {
+export const applyChangeLog = (datasheet: Datasheet, changeLog: ChangeLog) => {
   const command = Command.from(changeLog.command)
   if (command instanceof CreateRowCommand) {
     createRow(datasheet)
@@ -73,13 +73,13 @@ export const applyChangeLog = (datasheet: DataSheet, changeLog: ChangeLog) => {
   datasheet.revision = changeLog.revision
 }
 
-const createRow = (datasheet: DataSheet) => {
+const createRow = (datasheet: Datasheet) => {
   let newId = nextId()
-  DataSheet.getDefaultView(datasheet).rows.push(newId)
+  Datasheet.getDefaultView(datasheet).rows.push(newId)
   datasheet.records[newId] = {data: {}}
 }
 
-const updateCellValue = (datasheet: DataSheet, command: UpdateCellValueCommand) => {
+const updateCellValue = (datasheet: Datasheet, command: UpdateCellValueCommand) => {
   datasheet.records[command.recordId].data[command.fieldId] = command.value
 }
 

@@ -3,66 +3,31 @@ import * as Router from '@koa/router'
 import * as http from 'http'
 import * as WebSocket from 'ws'
 import * as bodyParser from 'koa-bodyparser'
-import { Context, DataSheet, IRecord, ShareDataSheet } from './core'
+import { Context, Datasheet, IRecord, IDatasheet } from './core'
 import { applyChangeLog, ChangeLog, Command, ICommand, UpdateCellValueCommand } from './core/command'
 import { ServerSocket } from './server_socket'
 import { FieldType } from './core/field'
+import { StoreManager, StoreProvider } from './core/store'
 
 const app = new Koa()
 const router = new Router()
 
 const context: Context = {
-      datasheetMap: {
-        '1': new DataSheet('1'),
-        '2': new DataSheet('2'),
-      },
-    }
-
-// init data
-;(() => {
-  const datasheet1 = context.datasheetMap['1']
-  datasheet1.field_map['text1'] = {type: FieldType.Text}
-  datasheet1.field_map['text2'] = {type: FieldType.Text}
-  datasheet1.records['rcd1'] = {
-    data: {
-      'text1': 'a1',
-      'text2': 'b1',
-    },
-  }
-  datasheet1.records['rcd2'] = {
-    data: {
-      'text1': 'a2',
-      'text2': 'b2',
-    },
-  }
-  datasheet1.views.push({rows: ['rcd1', 'rcd2']})
-
-  const datasheet2 = context.datasheetMap['2']
-  datasheet2.field_map['text1'] = {type: FieldType.Text}
-  datasheet2.field_map['text2'] = {type: FieldType.Text}
-  datasheet2.records['rcd3'] = {
-    data: {
-      'text1': 'a3',
-      'text2': 'b3',
-    },
-  }
-  datasheet2.records['rcd4'] = {
-    data: {
-      'text1': 'a4',
-      'text2': 'b4',
-    },
-  }
-  datasheet2.views.push({rows: ['rcd3', 'rcd4']})
-})()
-
+  datasheetMap: {
+    '1': new Datasheet('1'),
+    '2': new Datasheet('2'),
+  },
+}
 const serverSocket = new ServerSocket()
 
 class ChangeLogManager {
-  changeLogMap: { [datasheet_id: string]: ChangeLog[] }
+  changeLogMap: {
+    [datasheet_id: string]: ChangeLog[]
+  }
   lookupBroadcastMap: {
-    [datasheet_id: string]: {
-      [field_id: string]: [string, string][]
-    }
+    // key: datasheetId-recordId-fieldId
+    // value: [datasheetId, recordId, fieldId]
+    [key: string]: [string, string, string][]
   }
 
   constructor() {
@@ -89,17 +54,14 @@ class ChangeLogManager {
     return changeLogs.slice(revision)
   }
 
-  // example:
-  // createLookup(A, B, b) // A.a lookup B.b
-  public createLookup(datasheetId: string, fieldId: string, targetDatasheetId: string, targetFieldId: string) {
-    if (!this.lookupBroadcastMap[targetDatasheetId]) {
-      this.lookupBroadcastMap[targetDatasheetId] = {}
+  public createLookup(datasheetId: string, recordId: string, fieldId: string,
+                      targetDatasheetId: string, targetRecordId: string, targetFieldId: string) {
+    const key = `${targetDatasheetId}-${targetRecordId}-${targetFieldId}`
+
+    if (!this.lookupBroadcastMap[key]) {
+      this.lookupBroadcastMap[key] = []
     }
-    const lookupFieldMap = this.lookupBroadcastMap[targetDatasheetId]
-    if (!lookupFieldMap[targetFieldId]) {
-      lookupFieldMap[targetFieldId] = []
-    }
-    lookupFieldMap[targetFieldId].push([datasheetId, fieldId])
+    this.lookupBroadcastMap[key].push([datasheetId, recordId, fieldId])
   }
 
   private runDaemon() {
@@ -114,46 +76,131 @@ class ChangeLogManager {
     }, 1000)
   }
 
-  private handleChangeLog(datasheet: DataSheet, changeLog: ChangeLog) {
+  private handleChangeLog(datasheet: Datasheet, changeLog: ChangeLog) {
     console.log(changeLog)
 
     // handle lookup before apply changeLog
     let command = Command.from(changeLog.command)
     if (command instanceof UpdateCellValueCommand) {
-      this.handleLookupUpdate(datasheet.id, command.fieldId, command.value)
+      this.handleLookupUpdate(datasheet.id, command.recordId, command.fieldId, command.value)
     }
 
     applyChangeLog(datasheet, changeLog)
 
     // broadcast to all watchers
-    serverSocket.broadcast(context, datasheet.id, changeLog)
+    serverSocket.broadcast(datasheet.id, changeLog)
   }
 
-  private handleLookupUpdate(datasheetId: string, fieldId: string, value: string) {
-    let map = this.lookupBroadcastMap[datasheetId]
-    if (!map) {
+  private handleLookupUpdate(datasheetId: string, recordId: string, fieldId: string, value: string) {
+    const key = `${datasheetId}-${recordId}-${fieldId}`
+    let watchers = this.lookupBroadcastMap[key]
+    if (!watchers) {
       return
     }
-    let fieldInfo = map[fieldId]
-    if (!fieldInfo) {
-      return
+    for (let [datasheetId, recordId, fieldId] of watchers) {
+      const changeLog: ChangeLog = {
+        datasheetId, revision: 0, command: {
+          type: 'UPDATE_CELLVALUE',
+          args: [recordId, fieldId, value],
+        },
+      }
+      serverSocket.broadcast(datasheetId, changeLog)
     }
-    console.log('lookup todo')
   }
 }
 
 const changeLogManager = new ChangeLogManager()
 
+class ServerStoreProvider implements StoreProvider {
+  getRecord(datasheetId: string, recordId: string): IRecord {
+    let datasheet = context.datasheetMap[datasheetId]
+    if (!datasheet) {
+      return null
+    }
+    let record = datasheet.records[recordId]
+    if (!record) {
+      return null
+    }
+    return record
+  }
+}
 
-router.get('/datasheet/records/:id', (ctx) => {
+const storeManager = new StoreManager(new ServerStoreProvider())
+
+// init data
+;(() => {
+  // dashboard 1
+  const datasheet1 = context.datasheetMap['1']
+  datasheet1.field_map['text1'] = {type: FieldType.Text}
+  datasheet1.field_map['lookup1'] = {type: FieldType.Lookup, datasheet_id: '2', field_id: 'text2'}
+  datasheet1.records['rcd1'] = {
+    data: {
+      'text1': 'a1',
+      'lookup1': 'rcd3',
+    },
+  }
+  datasheet1.records['rcd2'] = {
+    data: {
+      'text1': 'a2',
+      'lookup1': 'rcd4',
+    },
+  }
+  datasheet1.views.push({rows: ['rcd1', 'rcd2']})
+
+  // link lookup
+  changeLogManager.createLookup('1', 'rcd1', 'lookup1',
+      '2', 'rcd3', 'text2')
+  changeLogManager.createLookup('1', 'rcd2', 'lookup1',
+      '2', 'rcd4', 'text2')
+
+  // datasheet 2
+  const datasheet2 = context.datasheetMap['2']
+  datasheet2.field_map['text1'] = {type: FieldType.Text}
+  datasheet2.field_map['text2'] = {type: FieldType.Text}
+  datasheet2.records['rcd3'] = {
+    data: {
+      'text1': 'a3',
+      'text2': 'b3',
+    },
+  }
+  datasheet2.records['rcd4'] = {
+    data: {
+      'text1': 'a4',
+      'text2': 'b4',
+    },
+  }
+  datasheet2.views.push({rows: ['rcd3', 'rcd4']})
+})()
+
+
+router.get('/datasheet/:id', (ctx) => {
   const datasheetId = ctx.params.id as string
 
   const dataSheet = context.datasheetMap[datasheetId]
-  const view = DataSheet.getDefaultView(dataSheet)
+  const view = Datasheet.getDefaultView(dataSheet)
 
-  const records = {} as { [recordId: string]: IRecord }
+  const records = {} as {
+    [recordId: string]: IRecord
+  }
   for (let recordId of view.rows) {
-    records[recordId] = dataSheet.records[recordId]
+    const recordData = dataSheet.records[recordId].data
+
+    const data = {}
+    for (let fieldId of Object.keys(recordData)) {
+      let field = dataSheet.field_map[fieldId]
+      if (field.type === FieldType.Text) {
+        data[fieldId] = recordData[fieldId]
+      } else if (field.type === FieldType.Lookup) {
+        let recordId = recordData[fieldId]
+        let lookupRecord = storeManager.getRecord(field.datasheet_id, recordId)
+
+        data[fieldId] = lookupRecord.data[field.field_id]
+      } else {
+        console.warn('ignore')
+      }
+    }
+
+    records[recordId] = {data}
   }
 
   ctx.body = {
@@ -162,11 +209,20 @@ router.get('/datasheet/records/:id', (ctx) => {
     field_map: dataSheet.field_map,
     views: [view],
     records,
-  } as ShareDataSheet
+  } as IDatasheet
+})
+
+router.get('/datasheet/:datasheetId/:recordId', (ctx) => {
+  const datasheetId = ctx.params.datasheetId as string
+  const recordId = ctx.params.recordId as string
+
+  ctx.body = storeManager.getRecord(datasheetId, recordId)
 })
 
 router.post('/datasheet/update', (ctx) => {
-  const body = ctx.request.body as ICommand & { datasheetId: string }
+  const body = ctx.request.body as ICommand & {
+    datasheetId: string
+  }
   const datasheetId = body.datasheetId
 
   changeLogManager.push(datasheetId, body)

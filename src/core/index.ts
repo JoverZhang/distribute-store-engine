@@ -10,7 +10,7 @@ export interface IView {
   rows: string[]
 }
 
-export interface ShareDataSheet {
+export interface IDatasheet {
   id: string
   revision: number
   field_map: {
@@ -22,7 +22,7 @@ export interface ShareDataSheet {
   }
 }
 
-export class DataSheet implements ShareDataSheet {
+export class Datasheet implements IDatasheet {
   id: string
   revision: number
   field_map: {
@@ -33,28 +33,25 @@ export class DataSheet implements ShareDataSheet {
     [recordId: string]: IRecord
   }
 
-  dependent_on: string[]
-
   constructor(id: string) {
     this.id = id
-    this.dependent_on = []
     this.revision = 0
     this.field_map = {}
     this.views = []
     this.records = {}
   }
 
-  public static getDefaultView(datasheet: DataSheet) {
+  public static getDefaultView(datasheet: Datasheet) {
     return datasheet.views[0]!
   }
 
-  public static getFieldById(datasheet: DataSheet, fieldId: string) {
+  public static getFieldById(datasheet: Datasheet, fieldId: string) {
     return datasheet.field_map[fieldId]!
   }
 }
 
 export interface Context {
   datasheetMap: {
-    [datasheet_id: string]: DataSheet
+    [datasheet_id: string]: Datasheet
   };
 }

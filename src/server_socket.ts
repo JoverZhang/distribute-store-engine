@@ -18,7 +18,7 @@ export class ServerSocket {
     this.watchMap[datasheetId].push(ws)
   }
 
-  public broadcast(ctx: Context, datasheetId: string, changeLog: ChangeLog) {
+  public broadcast(datasheetId: string, changeLog: ChangeLog) {
     const watchList = this.watchMap[datasheetId]
     if (!watchList) {
       return
