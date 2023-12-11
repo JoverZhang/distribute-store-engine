@@ -18,4 +18,4 @@ Datasheet 2:
 | rcd4                 | a4    | b4    |
 
 
-![demo](docs/videos/demo.mp4)
+[Demo Video](docs/videos/demo.mp4)
